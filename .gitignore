@@ -1,0 +1,27 @@
+# Ignore Gradle project-specific cache directory
+/.gradle
+/slipstream/.gradle
+
+# Ignore Gradle build output directory
+/build
+/slipstream/build
+
+# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+hs_err_pid*
+
+# IntelliJ IDEA files
+/out
+/slipstream/out
+/*.iml
+/.idea/*
+!/.idea/codeStyles
+
+# LWJGL Natives
+/natives
+
+# Ignore the user's debug savefiles (TODO move this to the regular saves dir)
+/debug-saves
+/fixme-wormhole-saves
+
+# Ignore .DS_Store files in MacOs filesystems
+.DS_Store

@@ -1,0 +1,189 @@
+For picking sector types (hostile, friendly, nebula):
+
+* 20% chance of nebula, otherwise:
+* An independent 60% chance of being friendly, 40% hostile
+
+This is handled in StarMap::GetRandomSectorChoice, where:
+0=friendly
+1=hostile
+2=nebula
+
+And >2 seems to involve a grey dot on the sector map, which
+might be somehow related to the crystal homeworlds? Or maybe
+just something cut (this can be seen in RenderSectorMap).
+
+
+Rebel fleet advance
+
+This is internally referred to as the danger zone. It's drawn
+using img/map/map_warningcircle.png, with map_warningcircle_tile.png
+repeated behind it. To show the area the fleet will capture
+next turn, map_warningcircle_point.png is used, with the area
+behind the image filled with the pixel colour that can be taken
+from the semi-transparent part of that image.
+
+They are drawn after all the beacons and the current beacon
+ship icon are drawn, but before the hovered cursor marker, store
+and exit labels are drawn.
+
+The danger zone can be modelled as a circle of radius of 767.
+
+The Y position of the centre of the circle is picked at random
+in the range of 50-300, and it's X starts at -959.
+
+The X position proceeds 64px for a jump from a normal beacon,
+51px for a jump from a nebula in a nebula sector, and 32px
+for a nebula beacon in a normal sector.
+
+The danger zone images have a point at 181,498 which matches
+up with the right-most point of the danger zone circle (767,0).
+
+When a beacon is overtaken, it's event is switched to one
+of (in StarMap::TurnIntoFleetLocation):
+
+FLEET_EASY, for non-exit-beacons
+FLEET_EASY_DLC, the above but with AE enabled
+FLEET_EASY_NEBULA, for non-exit nebula beacons
+FLEET_EASY_BEACON, for the exit beacon on easy
+FLEET_EASY_BEACON_DLC, for the exit beacon on normal/hard (not tied to AE!)
+
+Note there is no separate nebula exit beacon event. Instead, the
+nebula effect is applied to FLEET_EASY_BEACON[_DLC], overwriting
+the ASB/PDS hazard.
+
+
+StarMap::GenerateSectorMap:
+
+This is responsible for generating the map of all the different
+sectors. It sets up the first and last sectors, and calls
+AddSectorColumn six times to fill in the middle.
+
+
+StarMap::AddSectorColumn:
+
+This is the core of FTL's sector map generation. It builds a column
+of sectors, as seen on the map.
+
+It picks a random number between 2 and 4 inclusive, which
+is the number of sectors in this column. It always picks
+a different number (via re-rolling) than the last column.
+
+The exception is the first column, which always has two
+sectors, presumably to avoid giving the player more than two options.
+
+For each column, consider the number of sectors in the previous
+column to figure out how to link them up:
+
+4 prev, 2 now: 1st sector links to previous 1st/2nd, 2nd links to 3rd/4th
+2 prev, 4 now: 1st and 2nd links to previous 1st, 3rd and 4th link to previous 2nd
+
+Any other case (1 prev, 2 now for the first sector, or between 2/3, 4/3, 3/4, 3/2)
+is handled as follows:
+
+For each new sector:
+ * Find it's 'peer', the sector with the corresponding index in
+   the previous column.
+ * Connect the peer to the previously-added new sector, or do nothing
+   if we're adding the first sector in the column.
+ * Create the new sector, linking it with it's peer
+ * If this column has more sectors than the last column, add a new
+   column in the 2nd position to keep the connections right.
+
+The actual implementation is annoying to read due to inlining, but searching
+for 'FTL sector map' in your favourite search engine should make it obvious
+what's happening here - link up all the sectors without any of the neighbour
+links overlapping.
+
+
+StarMap::GenerateMap
+
+This generates the beacon map of the current sector. It repeatedly
+calls StarMap::PopulateGrid once for each potential beacon it can place in
+a 6x4 grid. See https://twitter.com/subsetgames/status/1234309658854084608 for
+an image from the devs.
+
+The order of the beacon generation is that the outer loop is for x, and
+the inner loop is for y, increasing (as in, the loops count up). This may
+be important for empty cells in PopulateGrid.
+
+It picks the end beacon: this has a random Y, and the X is randomised between
+the two right-most columns (columns {4,5} when zero-indexed). It requires the
+distance from the start beacon to the finish beacon be at least five jumps.
+
+In the last stand, this logic is used to pick the federation base location.
+On easy/normal, the base's x is picked from {2,3} while on hard it's picked
+from {3,4}. On easy/normal, the path to the base must be 4 jumps long, while
+on hard it must be between 5-6 jumps (inclusive).
+
+(Note that these path length constants are defined in the code as being
+exclusive, so for example normal fed base must be between 3-5 jumps, but
+both the min,max values are exclusive).
+
+The game will try upto 16 times to satisfy these length constraints, but
+will give up after that.
+
+For the last stand, the flagship position is picked after the aforementioned
+map generation completes. The flagship starts in a random column on the
+two right-most columns (the ones the exit beacon spawns in on a normal
+sector).
+
+The path from the flagship to the base must be 4-6 jumps (which includes
+both the start and end beacons). That is, the shortest path would have two
+beacons between the base and the flagship. Note (at least in the build
+I'm looking at) it does this comparison by using an unsigned comparison
+against a signed number, so it's easy to miss the lower bound if you're
+not looking closely.
+
+
+StarMap::PopulateGrid
+
+This generates a single beacon.
+
+There's a 20% chance for a cell on the map to not have a beacon. If this
+20% chance is rolled, then there's an additional check to ensure there
+aren't too many empty cells: if at least one empty cell has been
+placed, and at least 20% of the cells populated thus far are empty (that
+is, there are four times as many filled in beacons as empty ones),
+then this cell will be generated normally.
+
+The x,y coordinates of the beacon on the map are then picked. Each cell
+represents a 110x110px area, and the beacon is placed randomly inside that
+with 10px of margin around the outside.
+
+(These coordinates are offset such that 0,0 is drawn at 45,40 relative
+ to the outer edge of the window, not including the glow)
+
+The y coordinate is then limited to at most 415, and if it's in the two
+top-right cells, the y is limited to at least 30 (presumably to make way
+for the next sector button).
+
+It then connects this beacon with all the beacons in adjacent cells that
+are within 165px (via StarMap::ConnectLocations).
+
+
+StarMap::AddQuest
+
+This filters all the beacons in the sector, looking for those that:
+* Have not been visited
+* Are not nebula beacons
+* Is not the exit beacon
+* Have not been overtaken by the rebel fleet
+* Do not already have a quest at them
+* Is not a store
+* Is not a distress beacon
+* Is not the player's current beacon
+
+The path from the player to this beacon is then calculated. If there is
+no path, the beacon is skipped.
+
+There's then a further requirement that unless the 'force' argument is set,
+the number of jumps away from the player must be less than the number of
+jumps until this quest is overtaken by the rebels.
+
+(The force argument is true when adding quests delayed from a previous sector)
+
+
+One of the beacons matching the above requirements is then picked. If
+there are no suitable beacons, the quest is delayed until the next sector.
+The exception is that if such a quest is found in sector 7 or later, it's
+not delayed for obvious reasons.
