@@ -1,13 +1,13 @@
-package xyz.znix.xftl.ai
+package ftl2.ai
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import xyz.znix.xftl.Animations
-import xyz.znix.xftl.crew.AbstractCrew
-import xyz.znix.xftl.crew.CrewBlueprint
-import xyz.znix.xftl.crew.LivingCrew
-import xyz.znix.xftl.layout.Room
-import xyz.znix.xftl.testkit.InGameTest
+import ftl2.Animations
+import ftl2.crew.AbstractCrew
+import ftl2.crew.CrewBlueprint
+import ftl2.crew.LivingCrew
+import ftl2.layout.Room
+import ftl2.testkit.InGameTest
 import java.lang.reflect.Field
 
 class TestFriendlyCrewAI {

@@ -1,10 +1,10 @@
-package xyz.znix.xftl.testkit
+package ftl2.testkit
 
 import org.newdawn.slick.opengl.ImageDataFactory
-import xyz.znix.xftl.*
-import xyz.znix.xftl.rendering.Image
-import xyz.znix.xftl.rendering.Texture
-import xyz.znix.xftl.sys.ResourceContext
+import ftl2.*
+import ftl2.rendering.Image
+import ftl2.rendering.Texture
+import ftl2.sys.ResourceContext
 
 class FakeDatafile(files: List<String>, stringFiles: Map<String, String>) :
     Datafile(FakeVanillaDatafile(files, stringFiles), emptyList()) {

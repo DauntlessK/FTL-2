@@ -1,12 +1,12 @@
-package xyz.znix.xftl.testkit
+package ftl2.testkit
 
 import org.jdom2.input.SAXBuilder
-import xyz.znix.xftl.*
-import xyz.znix.xftl.crew.CrewNameManager
-import xyz.znix.xftl.game.Difficulty
-import xyz.znix.xftl.game.InGameState
-import xyz.znix.xftl.game.InGameState.GameContent
-import xyz.znix.xftl.sector.EventManager
+import ftl2.*
+import ftl2.crew.CrewNameManager
+import ftl2.game.Difficulty
+import ftl2.game.InGameState
+import ftl2.game.InGameState.GameContent
+import ftl2.sector.EventManager
 import java.io.StringReader
 
 class InGameTest(

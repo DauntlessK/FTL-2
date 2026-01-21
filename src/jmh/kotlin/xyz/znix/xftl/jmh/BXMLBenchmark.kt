@@ -1,13 +1,13 @@
-package xyz.znix.xftl.jmh
+package ftl2.jmh
 
 import org.jdom2.Document
 import org.jdom2.input.SAXBuilder
 import org.openjdk.jmh.annotations.Benchmark
 import org.openjdk.jmh.annotations.Scope
 import org.openjdk.jmh.annotations.State
-import xyz.znix.xftl.VanillaDatafile
-import xyz.znix.xftl.bxml.BXMLReader
-import xyz.znix.xftl.bxml.BXMLWriter
+import ftl2.VanillaDatafile
+import ftl2.bxml.BXMLReader
+import ftl2.bxml.BXMLWriter
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.ByteArrayInputStream

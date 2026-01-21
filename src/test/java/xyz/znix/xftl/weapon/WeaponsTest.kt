@@ -1,8 +1,8 @@
-package xyz.znix.xftl.weapon
+package ftl2.weapon
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import xyz.znix.xftl.testkit.InGameTest
+import ftl2.testkit.InGameTest
 
 class WeaponsTest {
     @Test

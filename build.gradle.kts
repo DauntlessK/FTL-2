@@ -70,7 +70,7 @@ dependencies {
 
 // Define the main class for the application
 application {
-    mainClass.set("xyz.znix.xftl.App")
+    mainClass.set("ftl2.App")
 
     // On Mac, all UI stuff must happen on the first thread, including
     // our GLFW stuff.

@@ -1,13 +1,13 @@
-package xyz.znix.xftl.projectile
+package ftl2.projectile
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import xyz.znix.xftl.Ship
-import xyz.znix.xftl.math.ConstPoint
-import xyz.znix.xftl.rendering.Graphics
-import xyz.znix.xftl.testkit.InGameTest
-import xyz.znix.xftl.weapons.AbstractProjectile
-import xyz.znix.xftl.weapons.AbstractWeaponBlueprint
+import ftl2.Ship
+import ftl2.math.ConstPoint
+import ftl2.rendering.Graphics
+import ftl2.testkit.InGameTest
+import ftl2.weapons.AbstractProjectile
+import ftl2.weapons.AbstractWeaponBlueprint
 
 /**
  * Makes sure collisions that would only be detected with CCD indeed are.

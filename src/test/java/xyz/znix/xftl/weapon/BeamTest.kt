@@ -1,12 +1,12 @@
-package xyz.znix.xftl.weapon
+package ftl2.weapon
 
 import org.intellij.lang.annotations.Language
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import xyz.znix.xftl.math.ConstPoint
-import xyz.znix.xftl.systems.SelectedTarget
-import xyz.znix.xftl.testkit.InGameTest
-import xyz.znix.xftl.weapons.BeamBlueprint
+import ftl2.math.ConstPoint
+import ftl2.systems.SelectedTarget
+import ftl2.testkit.InGameTest
+import ftl2.weapons.BeamBlueprint
 
 open class BeamTest {
     @Test

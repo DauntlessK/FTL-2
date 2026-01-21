@@ -1,9 +1,9 @@
-package xyz.znix.xftl.sector
+package ftl2.sector
 
 import org.intellij.lang.annotations.Language
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import xyz.znix.xftl.testkit.InGameTest
+import ftl2.testkit.InGameTest
 
 class EventsTest {
     @Test

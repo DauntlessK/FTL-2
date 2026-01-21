@@ -1,4 +1,4 @@
-package xyz.znix.xftl.bxml;
+package ftl2.bxml;
 
 import org.jdom2.*;
 import org.jdom2.input.SAXBuilder;
@@ -6,7 +6,7 @@ import org.jdom2.output.Format;
 import org.jdom2.output.XMLOutputter;
 import org.junit.Assert;
 import org.junit.Test;
-import xyz.znix.xftl.VanillaDatafile;
+import ftl2.VanillaDatafile;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;

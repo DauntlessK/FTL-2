@@ -1,6 +1,6 @@
-package xyz.znix.xftl.testkit
+package ftl2.testkit
 
-import xyz.znix.xftl.game.*
+import ftl2.game.*
 
 class NoOpSoundManager : SoundManager {
     override fun getSample(name: String): FTLSound {
