@@ -6,6 +6,10 @@ interface GameContainer {
     val input: Input
     val width: Int
     val height: Int
+    /** The actual framebuffer (pixel) width of the GLFW window. */
+    val fbWidth: Int
+    /** The actual framebuffer (pixel) height of the GLFW window. */
+    val fbHeight: Int
 
     fun exit()
 

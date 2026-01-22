@@ -141,7 +141,8 @@ public class MainGame implements Game {
     @Override
     public void render(@NotNull GameContainer gc, Graphics g) throws SlickException {
         // When we use shaders, we have to transform from pixels to NDC
-        // If this is set wrong, all the text etc will be transformed wrong.
+        // If shaders need the framebuffer size, the container will set it
+        // before calling render (avoids Java/Kotlin interop issues).
         ShaderProgramme.getSHADER_SCREEN_SIZE().set(gameContainer.getWidth(), gameContainer.getHeight());
 
         // Reset the transform from last frame, in case there was a transform

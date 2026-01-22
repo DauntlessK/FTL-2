@@ -18,7 +18,9 @@ import org.newdawn.slick.opengl.ImageDataFactory
 import ftl2.math.Point
 import ftl2.rendering.Cursor
 import ftl2.rendering.Graphics
+import ftl2.rendering.ShaderProgramme
 import java.io.BufferedInputStream
+import kotlin.math.*
 
 
 class LWJGLGameContainer(private val game: Game) : GameContainer {
@@ -29,6 +31,12 @@ class LWJGLGameContainer(private val game: Game) : GameContainer {
         private set
     override var height: Int = 400
         private set
+    // Actual framebuffer (pixel) size; may differ from logical width/height on some platforms
+    private var framebufferWidth: Int = width
+    private var framebufferHeight: Int = height
+    override val fbWidth: Int get() = framebufferWidth
+    override val fbHeight: Int get() = framebufferHeight
+    
 
     private lateinit var g: Graphics
 
@@ -36,6 +44,10 @@ class LWJGLGameContainer(private val game: Game) : GameContainer {
      * The GLFW window handle.
      */
     private var window: Long = 0
+    // Track logical window size (in window coordinates) for callback enforcement
+    private var windowWidth: Int = width
+    private var windowHeight: Int = height
+    private var resizingFromCallback: Boolean = false
 
     override fun exit() {
         glfwSetWindowShouldClose(window, true)
@@ -81,7 +93,7 @@ class LWJGLGameContainer(private val game: Game) : GameContainer {
         // Configure GLFW
         glfwDefaultWindowHints() // optional, the current window hints are already the default
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE) // the window will stay hidden after creation
-        glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE) // the window will be resizable
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE) // the window will be resizable
 
         // Set the OpenGL stuff
         glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API)
@@ -102,8 +114,17 @@ class LWJGLGameContainer(private val game: Game) : GameContainer {
             val pWidth = stack.mallocInt(1) // int*
             val pHeight = stack.mallocInt(1) // int*
 
-            // Get the window size passed to glfwCreateWindow
-            glfwGetWindowSize(window, pWidth, pHeight)
+                // Get the window size passed to glfwCreateWindow
+                glfwGetWindowSize(window, pWidth, pHeight)
+                windowWidth = pWidth[0]
+                windowHeight = pHeight[0]
+
+                // Use the framebuffer size for pixel measurements (HiDPI displays may differ)
+                val fbw = stack.mallocInt(1)
+                val fbh = stack.mallocInt(1)
+                glfwGetFramebufferSize(window, fbw, fbh)
+                framebufferWidth = fbw[0]
+                framebufferHeight = fbh[0]
 
             // Get the resolution of the primary monitor
             val vidmode = glfwGetVideoMode(glfwGetPrimaryMonitor())!!
@@ -127,7 +148,42 @@ class LWJGLGameContainer(private val game: Game) : GameContainer {
         // Make the window visible
         glfwShowWindow(window)
 
-        lwjglInput = LWJGLInput(window)
+        // Enforce the aspect ratio during interactive resizes by correcting
+        // the other dimension in the window-size callback. This works even on
+        // platforms where `glfwSetWindowAspectRatio` may not be honoured.
+        glfwSetWindowSizeCallback(window) { _, newW, newH ->
+            if (resizingFromCallback) return@glfwSetWindowSizeCallback
+            resizingFromCallback = true
+            try {
+                val aspect = width.toDouble() / height.toDouble()
+
+                // Decide which dimension the user changed (width or height)
+                val desiredW: Int
+                val desiredH: Int
+                if (newW != windowWidth && newH != windowHeight) {
+                    // Both changed: prefer width as driver
+                    desiredW = newW
+                    desiredH = kotlin.math.max(1, (desiredW / aspect).roundToInt())
+                } else if (newW != windowWidth) {
+                    desiredW = newW
+                    desiredH = kotlin.math.max(1, (desiredW / aspect).roundToInt())
+                } else {
+                    desiredH = newH
+                    desiredW = kotlin.math.max(1, (desiredH * aspect).roundToInt())
+                }
+
+                if (desiredW != newW || desiredH != newH) {
+                    glfwSetWindowSize(window, desiredW, desiredH)
+                }
+
+                windowWidth = desiredW
+                windowHeight = desiredH
+            } finally {
+                resizingFromCallback = false
+            }
+        }
+
+        lwjglInput = LWJGLInput(window, this)
         g = Graphics()
         g.markCurrentImageTransformSource()
 
@@ -138,6 +194,25 @@ class LWJGLGameContainer(private val game: Game) : GameContainer {
 
         // Set up OpenGL
         initOpenGL()
+        // Enforce the native aspect ratio so users can only resize while preserving it.
+        // Compute reduced aspect ratio values (numerator/denominator) and set GLFW constraint.
+        run {
+            fun gcd(a: Int, b: Int): Int {
+                var x = a
+                var y = b
+                while (y != 0) {
+                    val t = x % y
+                    x = y
+                    y = t
+                }
+                return x
+            }
+
+            val g = gcd(width, height)
+            val aw = width / g
+            val ah = height / g
+            glfwSetWindowAspectRatio(window, aw, ah)
+        }
     }
 
     private fun setupWindowIcon() {
@@ -177,6 +252,8 @@ class LWJGLGameContainer(private val game: Game) : GameContainer {
 
         glViewport(0, 0, width, height)
 
+        // Prefer the actual framebuffer size (pixel dimensions) if available
+        glViewport(0, 0, framebufferWidth, framebufferHeight)
         // Set up debug output
         glEnable(KHRDebug.GL_DEBUG_OUTPUT)
 
@@ -244,6 +321,20 @@ class LWJGLGameContainer(private val game: Game) : GameContainer {
                 ex.printStackTrace()
             }
 
+            // Check for framebuffer size changes and update viewport
+            stackPush().use { stack ->
+                val fbw = stack.mallocInt(1)
+                val fbh = stack.mallocInt(1)
+                glfwGetFramebufferSize(window, fbw, fbh)
+                val newW = fbw[0]
+                val newH = fbh[0]
+                if (newW != framebufferWidth || newH != framebufferHeight) {
+                    framebufferWidth = newW
+                    framebufferHeight = newH
+                    glViewport(0, 0, framebufferWidth, framebufferHeight)
+                }
+            }
+
             // Only render if the user can see the result
             if (!isFocused) {
                 // Internally run at ~20 updates/sec when unfocused to save CPU.
@@ -251,8 +342,29 @@ class LWJGLGameContainer(private val game: Game) : GameContainer {
                 continue
             }
 
-            // Render out the game
+            // Ensure shaders receive the actual framebuffer (pixel) size
+            ShaderProgramme.SHADER_SCREEN_SIZE.set(framebufferWidth, framebufferHeight)
+
+            // Render out the game, applying a scaling transform so the game's logical
+            // `width`/`height` coordinate space maps to the actual framebuffer while
+            // preserving aspect ratio.
+            g.loadIdentityMatrix()
+            // Compute integer-preserving scale to map logical -> pixel coordinates
+            val scaleX = framebufferWidth.toFloat() / width.toFloat()
+            val scaleY = framebufferHeight.toFloat() / height.toFloat()
+            val scale = kotlin.math.min(scaleX, scaleY)
+            val outW = (width * scale).toInt()
+            val outH = (height * scale).toInt()
+            val offsetX = ((framebufferWidth - outW) / 2).toFloat()
+            val offsetY = ((framebufferHeight - outH) / 2).toFloat()
+
+            g.translate(offsetX, offsetY)
+            g.scale(scale, scale)
+
             game.render(this, g)
+
+            // Reset transform for safety; shaders/GL state expect pixel-space elsewhere
+            g.loadIdentityMatrix()
 
             // Swap the colour buffers, presenting the newly-drawn one
             // to the screen.
@@ -267,10 +379,23 @@ class LWJGLGameContainer(private val game: Game) : GameContainer {
     fun setDisplayMode(width: Int, height: Int, fullScreen: Boolean) {
         this.width = width
         this.height = height
+        if (window != 0L) {
+            glfwSetWindowSize(window, width, height)
+            // After changing the window size, query the resulting framebuffer
+            // size (may differ on HiDPI displays) and update viewport.
+            stackPush().use { stack ->
+                val fbw = stack.mallocInt(1)
+                val fbh = stack.mallocInt(1)
+                glfwGetFramebufferSize(window, fbw, fbh)
+                framebufferWidth = fbw[0]
+                framebufferHeight = fbh[0]
+                glViewport(0, 0, framebufferWidth, framebufferHeight)
+            }
+        }
     }
 }
 
-private class LWJGLInput(val window: Long) : Input {
+private class LWJGLInput(val window: Long, val container: LWJGLGameContainer) : Input {
     override var mouseX: Int = 0
         private set
     override var mouseY: Int = 0
@@ -312,8 +437,34 @@ private class LWJGLInput(val window: Long) : Input {
             val x = stack.mallocDouble(1)
             val y = stack.mallocDouble(1)
             glfwGetCursorPos(window, x, y)
-            mouseX = x[0].toInt()
-            mouseY = y[0].toInt()
+            // Convert from framebuffer pixel coordinates into the game's logical
+            // coordinate space (the `width`/`height` set via setDisplayMode). We
+            // also account for centered letterboxing introduced when aspect ratio
+            // preserves a different scale.
+            val pixelX = x[0].toFloat()
+            val pixelY = y[0].toFloat()
+
+            val scaleX = container.fbWidth.toFloat() / container.width.toFloat()
+            val scaleY = container.fbHeight.toFloat() / container.height.toFloat()
+            val scale = min(scaleX, scaleY)
+            val outW = (container.width * scale)
+            val outH = (container.height * scale)
+            val offsetX = (container.fbWidth - outW) / 2f
+            val offsetY = (container.fbHeight - outH) / 2f
+
+            val logicalXf = (pixelX - offsetX) / scale
+            val logicalYf = (pixelY - offsetY) / scale
+
+            // Clamp to logical window bounds so UI logic doesn't see negative values
+            var lx = logicalXf.toInt()
+            var ly = logicalYf.toInt()
+            if (lx < 0) lx = 0
+            if (ly < 0) ly = 0
+            if (lx > container.width) lx = container.width
+            if (ly > container.height) ly = container.height
+
+            mouseX = lx
+            mouseY = ly
         }
 
         if (lastX == mouseX && lastY == mouseY)
