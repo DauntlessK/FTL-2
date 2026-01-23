@@ -76,6 +76,7 @@ class Sector {
      * Randomly generate a new sector.
      */
     constructor(
+
         info: GameMap.SectorInfo,
 
         /**
@@ -87,7 +88,7 @@ class Sector {
          *
          * If the list of events is shorter than the number of beacons we generate, those beacons will all
          * have the filler event.
-         */
+        */
         events: List<Event>,
 
         specialEvents: GameMap.SpecialEvents,

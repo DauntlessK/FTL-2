@@ -11,11 +11,14 @@ import ftl2.rendering.Graphics
 import ftl2.rendering.Image
 import ftl2.sector.Beacon
 import ftl2.sector.Sector
+import ftl2.system.POI
+import ftl2.system.System as FtlSystem
 import ftl2.sys.Input
 import kotlin.math.atan2
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.hypot
 import kotlin.random.Random
 
 // Note that the actual window appears at 340, if we want to be resizable we'll have to fix
@@ -27,7 +30,10 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
     private val sectorInfoTab = game.getImg("img/map/side_sector.png")
     private val titleTab = game.getImg("img/map/side_beaconmap.png")
     private val nextSectorTab = game.getImg("img/map/side_nextsector.png")
+    // Main UI font (restore to original for beacon/sector/cancel text)
     private val font = game.getFont("HL2", 3f)
+    // Smaller font used only for POI labels when viewing a System
+    private val poiFont = game.getFont("HL1", 2.5f)
     private val cancelButtonOutline = game.getImg("img/main_menus/button_cancel_base.png")
     private val sectorInfoFont = game.getFont("c&cnew", 2f)
     private val beaconLabelFont = game.getFont("HL1")
@@ -91,6 +97,7 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
     private val fuelDistressFlashOn: Boolean get() = fuelDistressOn && fuelDistressFlashTimer < 0.5f
 
     var hovered: Beacon? = null
+    var hoveredPOI: POI? = null
 
     private var playerRotation: Float = (0f..10f).random(VisualRandom)
 
@@ -138,6 +145,13 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
     private fun drawMapContent(g: Graphics) {
         // Draw the background image, offset 4px to account for the line wall of the window.
         background.draw(position.x + 4f, position.y + 4f)
+
+        // If we're viewing a System, render POIs instead of beacons
+        val currentSystem = game.getCurrentSystem()
+        if (currentSystem != null) {
+            drawSystemContent(g, currentSystem)
+            return
+        }
 
         mapBase.x = position.x + Sector.OFFSET.x
         mapBase.y = position.y + Sector.OFFSET.y
@@ -323,6 +337,81 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
         }
     }
 
+    private fun drawSystemContent(g: Graphics, system: FtlSystem) {
+        // Centre the system in the window (small visual offset to match SystemMapWindow)
+        val centreX = position.x + size.x / 2 + 24
+        val centreY = position.y + size.y / 2 + 8
+        // Compute scale so all POIs/planets fit inside the window (match SystemMapWindow)
+        val padding = 36f
+        val maxDrawable = kotlin.math.min(size.x, size.y) / 2f - padding
+        var maxDist = 0f
+        for (poi in system.pois) {
+            val d = hypot(poi.pos.x.toDouble(), poi.pos.y.toDouble()).toFloat()
+            if (d > maxDist) maxDist = d
+        }
+        for (planet in system.planets) {
+            val d = hypot(planet.pos.x.toDouble(), planet.pos.y.toDouble()).toFloat()
+            if (d > maxDist) maxDist = d
+        }
+        val star = system.centre
+        val starDist = hypot(star.pos.x.toDouble(), star.pos.y.toDouble()).toFloat()
+        if (starDist > maxDist) maxDist = starDist
+        val scale = if (maxDist > 0f && maxDist > maxDrawable) maxDrawable / maxDist else 1f
+
+        // Draw the central star (prefer art if available)
+        val starImg = if (star.artPath != null) game.getImgIfExists(star.artPath) else null
+        val starX = (centreX + star.pos.x * scale)
+        val starY = (centreY + star.pos.y * scale)
+        if (starImg != null) {
+            val sw = starImg.width
+            val sh = starImg.height
+            starImg.draw(starX - sw / 2f, starY - sh / 2f)
+        } else {
+            g.colour = Colour(255, 215, 80)
+            g.fillOval(starX - 16f, starY - 16f, 32f, 32f)
+        }
+
+        // Draw planets (decorative)
+        for (planet in system.planets) {
+            val px = centreX + planet.pos.x * scale
+            val py = centreY + planet.pos.y * scale
+            val pImg = if (planet.artPath != null) game.getImgIfExists(planet.artPath) else null
+            if (pImg != null) {
+                val iw = pImg.width
+                val ih = pImg.height
+                pImg.draw(px - iw / 2f, py - ih / 2f)
+            }
+        }
+
+        // Draw POIs (use art if available)
+        for (poi in system.pois) {
+            val px = centreX + poi.pos.x * scale
+            val py = centreY + poi.pos.y * scale
+
+            val poiImg = if (poi.artPath != null) game.getImgIfExists(poi.artPath) else null
+            val isHovered = poi == hoveredPOI
+
+            if (poiImg != null) {
+                val iw = poiImg.width
+                val ih = poiImg.height
+                poiImg.draw(px - iw / 2f, py - ih / 2f)
+            } else {
+                g.colour = if (isHovered) Constants.SECTOR_BRANCH_HOVER else Colour(180, 200, 220)
+                g.fillOval(px - 6f, py - 6f, 12f, 12f)
+            }
+
+            // Name label (use smaller POI font)
+            poiFont.drawString(px + 8f, py + 4f, poi.name, Constants.SECTOR_NAME_TEXT)
+
+            if (poi == hoveredPOI) {
+                // drawTargetBox expects the top-left of the icon (consistent with beacons)
+                val topLeftX = (px - (poiImg?.width ?: 12) / 2f).toInt()
+                val topLeftY = (py - (poiImg?.height ?: 12) / 2f).toInt()
+                drawTargetBox(g, Point(topLeftX, topLeftY))
+            }
+        }
+    }
+
     private fun drawDangerZone(g: Graphics) {
         val dangerZoneRHS = sector.dangerZoneCentre.x + Sector.DANGER_ZONE_RADIUS
         val nextDangerZoneRHS = dangerZoneRHS + sector.getFleetAdvanceFor(game.currentBeacon)
@@ -384,7 +473,8 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
         })
 
         // Draw the top-left map label tab
-        val tab = game.translator["map_title"]
+        val currentSystem = game.getCurrentSystem()
+        val tab = if (currentSystem != null) "SYSTEM MAP" else game.translator["map_title"]
         val tabWidth = UIUtils.drawTab(font, tab, titleTab, position.x.f - GLOW, position.y.f - GLOW, 20f, 38f)
         font.drawString(position.x + 14f, position.y + 25f, tab, Constants.JUMP_DISABLED_TEXT)
 
@@ -442,11 +532,11 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
             txtFont.drawString(x + tx.f, y + 20f, text, Constants.SECTOR_CUTOUT_TEXT)
         }
 
-        val sectorText = game.translator["map_sector"]
+        val sectorText = if (currentSystem != null) "Orion" else game.translator["map_sector"]
         val sectorTextY = position.y + size.y + 22f
         font.drawString(position.x + 6f, sectorTextY, sectorText, Constants.JUMP_DISABLED_TEXT)
 
-        val sectorName = game.translator["sectorname_" + sector.type.name]
+        val sectorName = if (currentSystem != null) "Orion" else game.translator["sectorname_" + sector.type.name]
         drawCutout(position.x + 134, position.y + size.y - 1, 38, (sector.sectorNumber + 1).toString())
         drawCutout(position.x + 183, position.y + size.y - 1, 276, sectorName)
 
@@ -565,14 +655,54 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
 
     override fun updateUI(x: Int, y: Int) {
         super.updateUI(x, y)
-
         hovered = null
+        hoveredPOI = null
 
-        // Can't hover over beacons while out of fuel
+        // Can't hover over beacons/POIs while out of fuel
         if (outOfFuel) {
             return
         }
 
+        // If viewing a System, handle POI hover
+        val currentSystem = game.getCurrentSystem()
+        if (currentSystem != null) {
+            val mx = x
+            val my = y
+            var closestPoi: POI? = null
+            var closestDist = Double.MAX_VALUE
+            // Compute same scale as drawSystemContent
+            val padding = 36f
+            val maxDrawable = kotlin.math.min(size.x, size.y) / 2f - padding
+            var maxDist = 0f
+            for (poi in currentSystem.pois) {
+                val d = hypot(poi.pos.x.toDouble(), poi.pos.y.toDouble()).toFloat()
+                if (d > maxDist) maxDist = d
+            }
+            val starDist = hypot(currentSystem.centre.pos.x.toDouble(), currentSystem.centre.pos.y.toDouble()).toFloat()
+            if (starDist > maxDist) maxDist = starDist
+            val scale = if (maxDist > 0f && maxDist > maxDrawable) maxDrawable / maxDist else 1f
+
+            val centreX = position.x + size.x / 2 + 24
+            val centreY = position.y + size.y / 2 + 8
+
+            for (poi in currentSystem.pois) {
+                val px = centreX + poi.pos.x * scale
+                val py = centreY + poi.pos.y * scale
+                val d = hypot((mx - px).toDouble(), (my - py).toDouble())
+                val img = if (poi.artPath != null) game.getImgIfExists(poi.artPath) else null
+                val radius = if (img != null) (kotlin.math.max(img.width, img.height) / 2f + 4f) else 16f
+                if (d < closestDist && d <= radius) {
+                    closestDist = d
+                    closestPoi = poi
+                }
+            }
+            if (closestPoi != null) {
+                hoveredPOI = closestPoi
+            }
+            return
+        }
+
+        // Otherwise fall back to beacon hover behaviour
         val closest = sector.beacons.map {
             val bp = it.pos + mapBase
             val dist = bp.distToSq(ConstPoint(x, y))
@@ -591,6 +721,21 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
 
         if (button != Input.MOUSE_LEFT_BUTTON)
             return
+
+        // If viewing a System, handle POI clicks
+        val currentSystem = game.getCurrentSystem()
+        if (currentSystem != null) {
+            val poi = hoveredPOI ?: return
+
+            // Perform basic jump behaviour: consume fuel, advance fleet, set POI
+            game.player.fuelCount--
+            game.advanceFleet()
+            game.setCurrentPOI(poi)
+
+            // Close the window via the jump callback
+            jump(null)
+            return
+        }
 
         val hovered = hovered ?: return
 

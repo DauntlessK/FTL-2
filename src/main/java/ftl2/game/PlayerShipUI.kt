@@ -1630,31 +1630,27 @@ class PlayerShipUI(val ship: Ship, private val game: InGameState) {
     fun openJumpMap() {
         if (!ship.isFtlReady || !ship.canChargeFTL)
             return
-
+        // Always open the JumpWindow so we keep the same popup UI for both
+        // the old beacon map and the new System/POI map. JumpWindow itself
+        // will detect `game.getCurrentSystem()` and render POIs when present.
         currentWindow = JumpWindow(game, ::openSectorMap) {
-            if (it != null) {
-                // Reset stuff after jumping
-                storeAlreadyOpened = false
-            }
-
+            // Reset UI state after any selection (beacon or POI)
+            storeAlreadyOpened = false
             currentWindow = null
-            updateButtons() // A store may now be available
+            updateButtons()
         }
     }
 
     fun openSectorMap() {
-        currentWindow = SectorMapWindow(game) { sectorInfo ->
+        currentWindow = SystemMapWindow(game, game.currentSystem) { poi ->
             currentWindow = null
 
-            // Null just means the window was closed
-            if (sectorInfo == null)
-                return@SectorMapWindow
+            if (poi == null)
+                return@SystemMapWindow
 
-            val sector = game.gameMap.generateSector(sectorInfo, game)
-            game.currentBeacon = sector.startBeacon
+            // Set the selected POI as the current POI in game state
+            game.setCurrentPOI(poi)
 
-            // In case we were at a store
-            // TODO move this into an on-jump handler function
             updateButtons()
         }
     }

@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.gradle.api.tasks.JavaExec
 
 plugins {
     // Apply the java plugin to add support for Java
@@ -117,4 +118,13 @@ val fatJar by tasks.registering(Jar::class) {
             exclude("META-INF/*.RSA")
         }
     })
+}
+
+// Run task that starts the JVM suspended so a debugger can attach
+tasks.register<JavaExec>("runDebug") {
+    group = "application"
+    description = "Run the application with JDWP suspended for debugger attach."
+    mainClass.set(application.mainClass.get())
+    classpath = sourceSets.main.get().runtimeClasspath
+    jvmArgs = listOf("-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005")
 }

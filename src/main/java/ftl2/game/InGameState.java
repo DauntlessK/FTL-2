@@ -37,6 +37,7 @@ import ftl2.ui.Widget;
 import ftl2.weapons.Damage;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -82,6 +83,9 @@ public class InGameState extends MainGame.GameState {
     private boolean enemyInteriorVisible;
 
     private Beacon currentBeacon;
+    // Current system and point-of-interest (POI) for the new System/POI model
+    private ftl2.system.System currentSystem;
+    private ftl2.system.POI currentPOI;
     private boolean paused;
 
     // The list of all the sectors the ship has visited, including
@@ -141,6 +145,12 @@ public class InGameState extends MainGame.GameState {
         Sector firstSector = gameMap.generateSector(gameMap.getSectors().get(0).get(0), this);
         setCurrentBeacon(firstSector.getStartBeacon());
 
+        // Also generate a starting System for the new System/POI model and select
+        // the star (centre) as the starting POI. We keep the existing beacon
+        // initialisation for compatibility while migrating other systems.
+        setCurrentSystem(ftl2.system.System.Companion.generate("Starting System", difficulty, (Integer) null));
+        setCurrentPOI(getCurrentSystem().getCentre());
+
         // Do this after setting the initial beacon, since the ship reads the current
         // beacon when calculating its power values.
         createNewPlayerShip(playerShipName, customised);
@@ -153,6 +163,22 @@ public class InGameState extends MainGame.GameState {
         // Show the starting beacon dialogue, since it wasn't displayed earlier
         // due to shipUI not existing yet.
         showEventDialogue(currentBeacon.getEvent(), Random.Default.nextInt());
+    }
+
+    public ftl2.system.System getCurrentSystem() {
+        return currentSystem;
+    }
+
+    public void setCurrentSystem(ftl2.system.System currentSystem) {
+        this.currentSystem = currentSystem;
+    }
+
+    public ftl2.system.POI getCurrentPOI() {
+        return currentPOI;
+    }
+
+    public void setCurrentPOI(ftl2.system.POI currentPOI) {
+        this.currentPOI = currentPOI;
     }
 
     /**
@@ -1125,8 +1151,29 @@ public class InGameState extends MainGame.GameState {
         if (file != null) {
             img = df.readImage(content.resourceContext, file);
         } else {
-            System.out.printf("[WARN] Missing image: '%s'%n", name);
-            img = getMissingImage();
+            // Try to load from classpath resources (e.g. src/main/resources)
+            InputStream res = null;
+            try {
+                // Try absolute resource path first
+                res = getClass().getResourceAsStream("/" + name);
+                if (res == null) {
+                    // Try classloader without leading slash
+                    res = getClass().getClassLoader().getResourceAsStream(name);
+                }
+                if (res != null) {
+                    img = TextureLoader.INSTANCE.loadImage(content.resourceContext, res, name);
+                } else {
+                    System.out.printf("[WARN] Missing image: '%s'%n", name);
+                    img = getMissingImage();
+                }
+            } catch (Exception e) {
+                System.out.printf("[WARN] Error loading image resource '%s': %s%n", name, e.getMessage());
+                img = getMissingImage();
+            } finally {
+                if (res != null) {
+                    try { res.close(); } catch (IOException ignored) {}
+                }
+            }
         }
         content.images.put(name, img);
         return img;
@@ -1145,12 +1192,28 @@ public class InGameState extends MainGame.GameState {
             return img;
 
         FTLFile file = df.getOrNull(name);
-        if (file == null)
-            return null;
+        if (file != null) {
+            img = df.readImage(content.resourceContext, file);
+            content.images.put(name, img);
+            return img;
+        }
 
-        img = df.readImage(content.resourceContext, file);
-        content.images.put(name, img);
-        return img;
+        // Try classpath resources as a fallback
+        InputStream res = null;
+        try {
+            res = getClass().getResourceAsStream("/" + name);
+            if (res == null) res = getClass().getClassLoader().getResourceAsStream(name);
+            if (res == null) return null;
+            img = TextureLoader.INSTANCE.loadImage(content.resourceContext, res, name);
+            content.images.put(name, img);
+            return img;
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (res != null) {
+                try { res.close(); } catch (IOException ignored) {}
+            }
+        }
     }
 
     /**

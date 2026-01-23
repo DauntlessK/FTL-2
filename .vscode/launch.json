@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+        "type": "java",
+        "name": "App",
+        "request": "launch",
+        "mainClass": "ftl2.App",
+        "projectName": "FTL-2"
+    },
+    {
+        "type": "java",
+        "name": "Attach to FTL (5005)",
+        "request": "attach",
+        "hostName": "localhost",
+        "port": 5005
+    }
+]
+}
