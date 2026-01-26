@@ -13,6 +13,8 @@ import ftl2.sector.Beacon
 import ftl2.sector.Sector
 import ftl2.system.POI
 import ftl2.system.System as FtlSystem
+import ftl2.system.RouteGenerator
+import ftl2.math.ConstFPoint
 import ftl2.sys.Input
 import kotlin.math.atan2
 import kotlin.math.max
@@ -73,6 +75,7 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
     private val sector = game.currentBeacon.sector
 
     private val flashTimerBase = System.nanoTime()
+    private val mapTimerBase = System.nanoTime()
 
     // The set of all the beacons we've visited a neighbour of - this
     // is used to figure out which beacons to display information about.
@@ -84,8 +87,10 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
 
     val cancelButton: Button
     val nextSectorButton: Button
+    val burnButton: Button
     val noFuelButtons: List<Button>
 
+    // Default background for non-system view
     val background = game.getImg("img/map/zone_1.png")
 
     /**
@@ -132,6 +137,57 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
         if (game.currentBeacon.isExit && outOfFuel)
             buttons += nextSectorButton
 
+        // Burn button (confirm jump along selected route)
+        val burnText = "BURN"
+        val burnTextWidth = font.getWidth(burnText)
+        val burnButtonWidth = burnTextWidth + 4 * 2
+        val burnPos = ConstPoint(size.x - 12 - nsButtonWidth - burnButtonWidth - 8, 12)
+        burnButton = object : Buttons.BasicButton(game, burnPos, ConstPoint(burnButtonWidth, 36), burnText, 3, font, 27, {
+            val dest = game.getSelectedDestinationPOI()
+            if (dest != null) {
+                // Compute fuel similar to display: route length + proximity penalty -> scaled
+                val route = game.getRouteWaypoints()
+                if (route != null) {
+                    var length = 0.0f
+                    for (i in 0 until route.size - 1) {
+                        val a = route[i]
+                        val b = route[i + 1]
+                        val dx = b.xf - a.xf
+                        val dy = b.yf - a.yf
+                        length += kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                    }
+                    // proximity penalty
+                    val thresh = 60f
+                    var penalty = 0.0f
+                    val cs = game.getCurrentSystem()
+                    if (cs != null) {
+                        val starX = cs.centre.pos.x.toFloat()
+                        val starY = cs.centre.pos.y.toFloat()
+                        for (wp in route) {
+                            val ds = kotlin.math.hypot(wp.xf - starX, wp.yf - starY)
+                            if (ds < thresh) penalty += (thresh - ds)
+                            for (pl in cs.planets) {
+                                val dp = kotlin.math.hypot(wp.xf - pl.pos.x.toFloat(), wp.yf - pl.pos.y.toFloat())
+                                if (dp < thresh) penalty += (thresh - dp)
+                            }
+                        }
+                    }
+                    penalty *= 0.2f
+                    val fuel = (length + penalty) * 0.1f
+                    val fuelCost = kotlin.math.round(fuel).toInt()
+                    if (game.player.fuelCount >= fuelCost) {
+                        game.player.fuelCount -= fuelCost
+                        game.setCurrentPOI(dest)
+                        game.clearRoute()
+                        jump(null)
+                    }
+                }
+            }
+        }) {
+            override val disabled: Boolean get() = game.getSelectedDestinationPOI() == null
+        }
+        buttons += burnButton
+
         // Hacky, the rendering code is also what populates the buttons
         noFuelButtons = ArrayList()
         drawNoFuelUI(noFuelButtons)
@@ -143,15 +199,23 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
      * Draw the insides of the window. This must be done with a stencil.
      */
     private fun drawMapContent(g: Graphics) {
-        // Draw the background image, offset 4px to account for the line wall of the window.
-        background.draw(position.x + 4f, position.y + 4f)
-
-        // If we're viewing a System, render POIs instead of beacons
+        // If we're viewing a System, render the system background and POIs instead of beacons
         val currentSystem = game.getCurrentSystem()
         if (currentSystem != null) {
+            val bgPath = currentSystem.bgStarArtPath
+            val bgImg: Image? = if (bgPath != null) game.getImgIfExists(bgPath) else null
+            if (bgImg != null) {
+                bgImg.draw(position.x + 4f, position.y + 4f)
+            } else {
+                // fallback default
+                background.draw(position.x + 4f, position.y + 4f)
+            }
             drawSystemContent(g, currentSystem)
             return
         }
+
+        // Draw the background image for non-system view, offset 4px to account for the window border.
+        background.draw(position.x + 4f, position.y + 4f)
 
         mapBase.x = position.x + Sector.OFFSET.x
         mapBase.y = position.y + Sector.OFFSET.y
@@ -358,17 +422,19 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
         if (starDist > maxDist) maxDist = starDist
         val scale = if (maxDist > 0f && maxDist > maxDrawable) maxDrawable / maxDist else 1f
 
-        // Draw the central star (prefer art if available)
+        // (map overlay removed)
+
+        // Draw the central star (prefer art if available) - use integer centring to avoid half-pixel offsets
         val starImg = if (star.artPath != null) game.getImgIfExists(star.artPath) else null
-        val starX = (centreX + star.pos.x * scale)
-        val starY = (centreY + star.pos.y * scale)
+        val starXInt = (centreX + star.pos.x * scale).roundToInt()
+        val starYInt = (centreY + star.pos.y * scale).roundToInt()
         if (starImg != null) {
             val sw = starImg.width
             val sh = starImg.height
-            starImg.draw(starX - sw / 2f, starY - sh / 2f)
+            starImg.draw(starXInt - sw / 2f, starYInt - sh / 2f)
         } else {
             g.colour = Colour(255, 215, 80)
-            g.fillOval(starX - 16f, starY - 16f, 32f, 32f)
+            g.fillOval(starXInt - 16f, starYInt - 16f, 32f, 32f)
         }
 
         // Draw planets (decorative)
@@ -384,6 +450,35 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
         }
 
         // Draw POIs (use art if available)
+        // Draw route if present (dotted) and show cost/time
+        val route = game.getRouteWaypoints()
+        if (route != null) {
+            g.colour = Colour(255, 215, 80, 200)
+            var i = 0
+            while (i < route.size) {
+                val wp = route[i]
+                val rx = centreX + wp.xf * scale
+                val ry = centreY + wp.yf * scale
+                g.fillOval(rx - 2f, ry - 2f, 4f, 4f)
+                i += 3 // space out dots for dotted effect
+            }
+
+            // Measure route length in system-local pixels along the curve
+            var length = 0.0f
+            for (idx in 0 until route.size - 1) {
+                val a = route[idx]
+                val b = route[idx + 1]
+                val dx = b.xf - a.xf
+                val dy = b.yf - a.yf
+                length += kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+            }
+
+            // Convert: 10px = 1 day, 10px = 10 fuel originally.
+            // Scale down costs by 10x per request: days = length / 100, fuel = length * 0.1
+            val days = length / 100f
+            val fuel = length * 0.1f
+        }
+
         for (poi in system.pois) {
             val px = centreX + poi.pos.x * scale
             val py = centreY + poi.pos.y * scale
@@ -408,6 +503,35 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
                 val topLeftX = (px - (poiImg?.width ?: 12) / 2f).toInt()
                 val topLeftY = (py - (poiImg?.height ?: 12) / 2f).toInt()
                 drawTargetBox(g, Point(topLeftX, topLeftY))
+            }
+        }
+
+        // Draw player's ship circling the current POI
+        val currentPOI = game.getCurrentPOI()
+        if (currentPOI != null) {
+            // Only draw if this POI belongs to this system (or is centre)
+            if (currentPOI == system.centre || system.pois.contains(currentPOI)) {
+                val shipImg = if (outOfFuel) playerShipNoFuel else playerShip
+                val px = centreX + currentPOI.pos.x * scale
+                val py = centreY + currentPOI.pos.y * scale
+
+                val now = (java.lang.System.nanoTime() - mapTimerBase) / 1e9f
+                // Slower orbit speed
+                val orbitSpeed = 0.8f
+                val angle = now * orbitSpeed + playerRotation
+                val currentPoiImg = if (currentPOI.artPath != null) game.getImgIfExists(currentPOI.artPath) else null
+                val orbitR = ((currentPoiImg?.width ?: 12) / 2f) + 10f
+                val dx = (orbitR * kotlin.math.cos(angle.toDouble())).toFloat()
+                val dy = (orbitR * kotlin.math.sin(angle.toDouble())).toFloat()
+
+                val sw = shipImg.width
+                val sh = shipImg.height
+                // Rotate ship to face direction of travel (tangent)
+                val headingDeg = Math.toDegrees((angle + Math.PI / 2.0).toDouble()).toFloat() + 90f
+                g.pushTransform()
+                g.rotate(px + dx, py + dy, headingDeg)
+                shipImg.draw(px + dx - sw / 2f, py + dy - sh / 2f)
+                g.popTransform()
             }
         }
     }
@@ -536,7 +660,48 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
         val sectorTextY = position.y + size.y + 22f
         font.drawString(position.x + 6f, sectorTextY, sectorText, Constants.JUMP_DISABLED_TEXT)
 
-        val sectorName = if (currentSystem != null) "Orion" else game.translator["sectorname_" + sector.type.name]
+        // Centre bottom cutout: when viewing a System show blank, unless a route is selected
+        val sectorName = if (currentSystem != null) {
+            val route = game.getRouteWaypoints()
+            if (route != null) {
+                var length = 0.0f
+                for (idx in 0 until route.size - 1) {
+                    val a = route[idx]
+                    val b = route[idx + 1]
+                    val dx = b.xf - a.xf
+                    val dy = b.yf - a.yf
+                    length += kotlin.math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+                }
+                // Scale costs down by 10x: days = length / 100, fuel = length * 0.1
+                val days = length / 100f
+
+                // proximity penalty for fuel near star/planets
+                val routeList = route
+                val thresh = 60f
+                var penalty = 0.0f
+                val cs = game.getCurrentSystem()
+                if (cs != null) {
+                    val starX = cs.centre.pos.x.toFloat()
+                    val starY = cs.centre.pos.y.toFloat()
+                    for (wp in routeList) {
+                        val ds = kotlin.math.hypot(wp.xf - starX, wp.yf - starY)
+                        if (ds < thresh) penalty += (thresh - ds)
+                        for (pl in cs.planets) {
+                            val dp = kotlin.math.hypot(wp.xf - pl.pos.x.toFloat(), wp.yf - pl.pos.y.toFloat())
+                            if (dp < thresh) penalty += (thresh - dp)
+                        }
+                    }
+                }
+                penalty *= 0.2f
+                val fuel = (length + penalty) * 0.1f
+                val daysStr = java.lang.String.format(java.util.Locale.US, "%.1f", days)
+                val fuelStr = java.lang.String.format(java.util.Locale.US, "%.1f", fuel)
+                "Route: ${daysStr}d, Fuel: ${fuelStr}"
+            } else {
+                ""
+            }
+        } else game.translator["sectorname_" + sector.type.name]
+
         drawCutout(position.x + 134, position.y + size.y - 1, 38, (sector.sectorNumber + 1).toString())
         drawCutout(position.x + 183, position.y + size.y - 1, 276, sectorName)
 
@@ -727,13 +892,23 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
         if (currentSystem != null) {
             val poi = hoveredPOI ?: return
 
-            // Perform basic jump behaviour: consume fuel, advance fleet, set POI
-            game.player.fuelCount--
-            game.advanceFleet()
-            game.setCurrentPOI(poi)
+            // If clicking on the current POI, ignore
+            val currentPoi = game.getCurrentPOI()
+            if (currentPoi != null && poi == currentPoi) return
 
-            // Close the window via the jump callback
-            jump(null)
+            // If clicking the already-selected destination, unselect
+            val prev = game.getSelectedDestinationPOI()
+            if (prev != null && prev == poi) {
+                game.clearRoute()
+                return
+            }
+
+            // First click: select destination and compute curved route (do not jump yet)
+            game.setSelectedDestinationPOI(poi)
+            val from = currentPoi?.pos ?: currentSystem.centre.pos
+            val to = poi.pos
+            val pts = RouteGenerator.generateRoute(from, to, currentSystem, 64)
+            game.setRouteWaypoints(pts)
             return
         }
 
@@ -748,10 +923,6 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
 
         game.player.fuelCount--
 
-        // Advance the fleet pursuit *before* changing the beacon, since
-        // if we're in a nebula that slows down the fleet pursuit.
-        game.advanceFleet()
-
         // Make sure we set the beacon after we've called the jump callback, so that the event
         // dialogue window doesn't get closed by the callback.
         game.currentBeacon = hovered
@@ -760,7 +931,7 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
     private fun waitOutOfFuel() {
         // Close the window and advance the fleet
         jump(game.currentBeacon)
-        game.advanceFleet()
+        // fleet advancement removed; no-op
 
         // TODO the escape events that play when you were in a dangerous environment
 
@@ -907,6 +1078,7 @@ class JumpWindow(val game: InGameState, showSectorMap: () -> Unit, val jump: (Be
     }
 
     private fun cancelClicked() {
+        game.clearRoute()
         jump(null)
     }
 

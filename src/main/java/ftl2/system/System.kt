@@ -26,18 +26,22 @@ class System {
     /** The central object of the system (usually a star). */
     val centre: POI
 
+    /** Background image path chosen for this system (optional). */
+    val bgStarArtPath: String?
+
     /** The collection of POIs in this system (does not include the centre). */
     val pois = ArrayList<POI>()
 
     /** Planets (decorative) - not clickable POIs. */
     val planets = ArrayList<Planet>()
 
-    constructor(name: String, centre: POI, planets: List<Planet>, pois: List<POI>, starType: StarType = StarType.G) {
+    constructor(name: String, centre: POI, planets: List<Planet>, pois: List<POI>, starType: StarType = StarType.G, bgStarArtPath: String? = null) {
         this.name = name
         this.centre = centre
         this.starType = starType
         this.planets.addAll(planets)
         this.pois.addAll(pois)
+        this.bgStarArtPath = bgStarArtPath
     }
 
     /** Procedurally generate a system around a central star. */
@@ -67,6 +71,10 @@ class System {
                 artPath = chosenSun
             )
 
+            // Choose and store a background for this system (persistent)
+            val bgChoices = listOf("img/stars/bg_dullstars.png", "img/stars/bg_dullstars2.png")
+            val chosenBg = bgChoices[rand.nextInt(bgChoices.size)]
+
             // We'll consider 8 possible orbits and decide per-orbit whether to place a planet
             val ORBITS = 8
 
@@ -81,6 +89,7 @@ class System {
             var totalTarget = rand.nextInt(3, 8)
 
             val pois = ArrayList<POI>()
+            val STANDARD_POI_ART = "img/map/map_icon_diamond_yellow.png"
 
             // Place planets on concentric orbits
             // Slightly larger spacing so POIs don't sit on top of planets
@@ -176,6 +185,17 @@ class System {
                 planetList += planet
             }
 
+            // Ensure at least one planet exists so the system isn't empty of planets
+            if (planetList.isEmpty()) {
+                val fallbackRadius = INNER_GAP + 3 * orbitSpacing
+                val fx = (fallbackRadius * kotlin.math.cos(0.0)).toInt()
+                val fy = (fallbackRadius * kotlin.math.sin(0.0)).toInt()
+                val pType = PlanetType.TERRESTRIAL
+                val artPath = "assets/img/system/poi/planet_terrestrial1.png"
+                val planet = Planet(rand.nextInt(), pType.defaultName(1), ConstPoint(fx, fy), pType, rand.nextInt(), artPath)
+                planetList += planet
+            }
+
             // Map to track how many close POIs (satellites) each planet has
             val satelliteCounts = HashMap<Planet, Int>()
 
@@ -253,13 +273,19 @@ class System {
                     }
                 }
 
-                val poiArt = when (type) {
-                    POIType.STATION, POIType.CITY -> "img/map/map_icon_diamond_blue.png"
-                    POIType.OUTPOST -> "img/map/map_icon_diamond_yellow.png"
-                    POIType.ASTEROID_FIELD -> "img/map/map_icon_diamond_yellow.png"
-                    POIType.DERELICT -> "img/map/map_icon_triangle_yellow.png"
-                    POIType.ANOMALY -> "img/map/map_icon_triangle_red.png"
-                    else -> "img/map/map_icon_diamond_yellow.png"
+                val poiArt = STANDARD_POI_ART
+
+                // subtype assignment
+                var stationSubtype: ftl2.system.StationType? = null
+                var derelictSubtype: ftl2.system.DerelictType? = null
+                var anomalySubtype: String? = null
+                if (type == POIType.STATION) {
+                    val st = ftl2.system.StationType.values()[rand.nextInt(ftl2.system.StationType.values().size)]
+                    stationSubtype = st
+                }
+                if (type == POIType.DERELICT) {
+                    val dt = ftl2.system.DerelictType.values()[rand.nextInt(ftl2.system.DerelictType.values().size)]
+                    derelictSubtype = dt
                 }
 
                 val poi = POI(
@@ -267,9 +293,14 @@ class System {
                     name = type.defaultName(pois.size + 1),
                     pos = ConstPoint(sx, sy),
                     type = type,
-                    seed = rand.nextInt()
+                    seed = rand.nextInt(),
+                    artPath = poiArt,
+                    spawnLocation = ftl2.system.SpawnLocation.NEAR_PLANET,
+                    stationType = stationSubtype,
+                    derelictType = derelictSubtype,
+                    anomalyType = anomalySubtype,
+                    isJumpBeacon = false
                 )
-                poi.artPath = poiArt
                 pois += poi
                 satelliteCounts[parent] = index + 1
             }
@@ -280,9 +311,10 @@ class System {
                 var attempts = 0
                 var fx = 0
                 var fy = 0
+                var chosenOrbit = 0
                 while (!placed && attempts < 128) {
-                    val orbit = rand.nextInt(1, planetList.size + 4)
-                    val radius = orbit * orbitSpacing + rand.nextInt(-120, 121)
+                    chosenOrbit = rand.nextInt(1, planetList.size + 4)
+                    val radius = chosenOrbit * orbitSpacing + rand.nextInt(-120, 121)
                     val angle = rand.nextDouble(0.0, Math.PI * 2)
                     fx = (radius * kotlin.math.cos(angle)).toInt()
                     fy = (radius * kotlin.math.sin(angle)).toInt()
@@ -328,19 +360,31 @@ class System {
                     }
                 }
 
-                val type = when (rand.nextInt(100)) {
-                    in 0..25 -> POIType.ASTEROID_FIELD
-                    in 26..50 -> POIType.STATION
-                    in 51..75 -> POIType.ANOMALY
-                    else -> POIType.DERELICT
+                // Allow outer-edge jump beacons
+                var type: POIType
+                var poiArt = STANDARD_POI_ART
+                val isOuter = (chosenOrbit >= ORBITS - 1)
+                if (isOuter && rand.nextInt(100) < 15) {
+                    type = POIType.JUMP_BEACON
+                    poiArt = STANDARD_POI_ART
+                } else {
+                    type = when (rand.nextInt(100)) {
+                        in 0..25 -> POIType.ASTEROID_FIELD
+                        in 26..50 -> POIType.STATION
+                        in 51..75 -> POIType.ANOMALY
+                        else -> POIType.DERELICT
+                    }
+                    poiArt = STANDARD_POI_ART
                 }
 
-                val poiArt = when (type) {
-                    POIType.STATION -> "img/map/map_icon_diamond_blue.png"
-                    POIType.ASTEROID_FIELD -> "img/map/map_icon_diamond_yellow.png"
-                    POIType.DERELICT -> "img/map/map_icon_triangle_yellow.png"
-                    POIType.ANOMALY -> "img/map/map_icon_triangle_red.png"
-                    else -> "img/map/map_icon_diamond_yellow.png"
+                var stationSubtype: ftl2.system.StationType? = null
+                var derelictSubtype: ftl2.system.DerelictType? = null
+                var anomalySubtype: String? = null
+                if (type == POIType.STATION) {
+                    stationSubtype = ftl2.system.StationType.values()[rand.nextInt(ftl2.system.StationType.values().size)]
+                }
+                if (type == POIType.DERELICT) {
+                    derelictSubtype = ftl2.system.DerelictType.values()[rand.nextInt(ftl2.system.DerelictType.values().size)]
                 }
 
                 val poi = POI(
@@ -348,13 +392,18 @@ class System {
                     name = type.defaultName(pois.size + 1),
                     pos = ConstPoint(fx, fy),
                     type = type,
-                    seed = rand.nextInt()
+                    seed = rand.nextInt(),
+                    artPath = poiArt,
+                    spawnLocation = if (type == POIType.JUMP_BEACON) ftl2.system.SpawnLocation.OUTER_EDGE else ftl2.system.SpawnLocation.FREE_SPACE,
+                    stationType = stationSubtype,
+                    derelictType = derelictSubtype,
+                    anomalyType = anomalySubtype,
+                    isJumpBeacon = (type == POIType.JUMP_BEACON)
                 )
-                poi.artPath = poiArt
                 pois += poi
             }
 
-            return System(name, star, planetList, pois, starType)
+            return System(name, star, planetList, pois, starType, chosenBg)
         }
     }
 
@@ -364,6 +413,7 @@ class System {
 
         SaveUtil.addAttr(elem, "name", name)
         SaveUtil.addAttr(elem, "starType", starType.name)
+        if (bgStarArtPath != null) SaveUtil.addAttr(elem, "bgStar", bgStarArtPath)
 
         // Register centre, planets and POIs so they can be referenced if needed
         refs.register(centre, "poi")
@@ -424,6 +474,9 @@ class System {
         for (p in listOf(centre) + planets + pois) {
             SaveUtil.registerObjectId(Element("dummy"), refs, p)
         }
+        // Load saved background if present
+        val bg = elem.getAttributeValue("bgStar")
+        bgStarArtPath = if (bg != null && bg.isNotBlank()) bg else null
     }
 }
 

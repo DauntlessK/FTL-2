@@ -86,6 +86,9 @@ public class InGameState extends MainGame.GameState {
     // Current system and point-of-interest (POI) for the new System/POI model
     private ftl2.system.System currentSystem;
     private ftl2.system.POI currentPOI;
+    // Selected destination (first click) and computed route waypoints (in system local coords)
+    private ftl2.system.POI selectedDestinationPOI;
+    private java.util.ArrayList<ftl2.math.ConstFPoint> routeWaypoints;
     private boolean paused;
 
     // The list of all the sectors the ship has visited, including
@@ -145,11 +148,41 @@ public class InGameState extends MainGame.GameState {
         Sector firstSector = gameMap.generateSector(gameMap.getSectors().get(0).get(0), this);
         setCurrentBeacon(firstSector.getStartBeacon());
 
-        // Also generate a starting System for the new System/POI model and select
-        // the star (centre) as the starting POI. We keep the existing beacon
-        // initialisation for compatibility while migrating other systems.
+        // Also generate a starting System for the new System/POI model.
         setCurrentSystem(ftl2.system.System.Companion.generate("Starting System", difficulty, (Integer) null));
-        setCurrentPOI(getCurrentSystem().getCentre());
+
+        // Ensure there is at least one station in the starting system and place the player there.
+        ftl2.system.System startingSystem = getCurrentSystem();
+        ftl2.system.POI startingStation = null;
+        for (ftl2.system.POI p : startingSystem.getPois()) {
+            if (p.getType() == ftl2.system.POIType.STATION) { startingStation = p; break; }
+        }
+        if (startingStation == null) {
+            // Create a station near the first planet if available, otherwise place in free space
+            int sx = 120, sy = 0;
+            if (!startingSystem.getPlanets().isEmpty()) {
+                ftl2.system.Planet parent = startingSystem.getPlanets().get(0);
+                sx = parent.getPos().getX() + 50;
+                sy = parent.getPos().getY();
+            }
+            startingStation = new ftl2.system.POI(
+                kotlin.random.Random.Default.nextInt(),
+                "Station 1",
+                new ftl2.math.ConstPoint(sx, sy),
+                ftl2.system.POIType.STATION,
+                kotlin.random.Random.Default.nextInt(),
+                "img/map/map_icon_diamond_yellow.png",
+                ftl2.system.SpawnLocation.NEAR_PLANET,
+                null,
+                null,
+                null,
+                false
+            );
+            startingSystem.getPois().add(startingStation);
+        }
+
+        // Set player's current POI to the starting station
+        setCurrentPOI(startingStation);
 
         // Do this after setting the initial beacon, since the ship reads the current
         // beacon when calculating its power values.
@@ -180,6 +213,16 @@ public class InGameState extends MainGame.GameState {
     public void setCurrentPOI(ftl2.system.POI currentPOI) {
         this.currentPOI = currentPOI;
     }
+
+    public ftl2.system.POI getSelectedDestinationPOI() { return selectedDestinationPOI; }
+    public void setSelectedDestinationPOI(ftl2.system.POI p) { this.selectedDestinationPOI = p; }
+
+    public java.util.List<ftl2.math.ConstFPoint> getRouteWaypoints() { return routeWaypoints; }
+    public void setRouteWaypoints(java.util.List<ftl2.math.ConstFPoint> pts) {
+        if (pts == null) this.routeWaypoints = null; else this.routeWaypoints = new java.util.ArrayList<>(pts);
+    }
+
+    public void clearRoute() { this.selectedDestinationPOI = null; this.routeWaypoints = null; }
 
     /**
      * Load a previously-saved game.

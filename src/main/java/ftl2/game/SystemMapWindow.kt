@@ -21,6 +21,7 @@ class SystemMapWindow(private val game: InGameState, displaySystem: ftl2.system.
     // Use provided system or generate a temporary one for display
     // Default to a test system named "Orion"
     private val system = displaySystem ?: System.generate("Orion", game.difficulty)
+    private val mapTimerBase = java.lang.System.nanoTime()
 
     // Compute centre dynamically from window position (small visual offset applied)
     private fun centre(): Point {
@@ -84,6 +85,8 @@ class SystemMapWindow(private val game: InGameState, displaySystem: ftl2.system.
             }
         }
 
+        // (map overlay removed)
+
         for (poi in system.pois) {
             val p = Point((c.x + poi.pos.x * scale).roundToInt(), (c.y + poi.pos.y * scale).roundToInt())
 
@@ -102,6 +105,44 @@ class SystemMapWindow(private val game: InGameState, displaySystem: ftl2.system.
 
             // Name
             titleFont.drawString(p.x + 8f, p.y + 4f, poi.name, Constants.SECTOR_NAME_TEXT)
+        }
+        // Draw route if present and show cost/time
+        val route = game.getRouteWaypoints()
+        if (route != null) {
+            g.colour = Colour(255, 215, 80, 200)
+            var i = 0
+            while (i < route.size) {
+                val wp = route[i]
+                val rx = c.x + wp.xf * scale
+                val ry = c.y + wp.yf * scale
+                g.fillOval(rx - 2f, ry - 2f, 4f, 4f)
+                i += 3
+            }
+
+            // Top route info removed — bottom cutout in JumpWindow shows costs.
+        }
+        
+        // Draw player's ship circling the current POI
+        val currentPOI = game.getCurrentPOI()
+        if (currentPOI != null) {
+            if (currentPOI == system.centre || system.pois.contains(currentPOI)) {
+                val shipImg = if (game.player.fuelCount == 0) game.getImg("img/map/map_icon_ship_fuel.png") else game.getImg("img/map/map_icon_ship.png")
+                val poi = currentPOI
+                val p = Point((c.x + poi.pos.x * scale).roundToInt(), (c.y + poi.pos.y * scale).roundToInt())
+                val now = (java.lang.System.nanoTime() - mapTimerBase) / 1e9f
+                val orbitSpeed = 0.8f
+                val angle = now * orbitSpeed
+                val orbitR = 14f
+                val dx = (orbitR * kotlin.math.cos(angle.toDouble())).toFloat()
+                val dy = (orbitR * kotlin.math.sin(angle.toDouble())).toFloat()
+                val sw = shipImg.width
+                val sh = shipImg.height
+                val headingDeg = Math.toDegrees((angle + Math.PI / 2.0).toDouble()).toFloat() + 90f
+                g.pushTransform()
+                g.rotate(p.x + dx, p.y + dy, headingDeg)
+                shipImg.draw(p.x + dx - sw / 2f, p.y + dy - sh / 2f)
+                g.popTransform()
+            }
         }
     }
 
